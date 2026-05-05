@@ -41,7 +41,7 @@ X-API-KEY: UMERSHERAZ
 Content-Type: application/json
 ```
 
-The expected key is defined in `src/app.js` (`VALID_API_KEY`). Change it there for production, or refactor to read from `process.env` if you prefer.
+The expected key is defined in `src/express-app.js` (`VALID_API_KEY`). Change it there for production, or refactor to read from `process.env` if you prefer.
 
 The checkout page **`GET /checkout/:txnId`** is opened in the browser and does **not** send this header.
 
@@ -104,10 +104,10 @@ Returns the payment HTML page for a transaction created via `createPayment`. Ses
 
 ## Deploy on Vercel
 
-This repo follows [Express on Vercel](https://vercel.com/docs/frameworks/backend/express): the serverless entry is **`src/app.js`** (default export). Local listening uses **`run-local.mjs`** at the project root so Vercel does not treat it as a second app entry.
+Production uses **`api/index.js`**, which default-exports the Express app from **`src/express-app.js`**. **`vercel.json`** rewrites all paths to `/api` so `https://<project>.vercel.app/`, `/v1/...`, and `/checkout/...` hit the same function (avoids the platform **404 NOT_FOUND** when only `src/app.js` is present and routing is unclear).
 
 1. Connect the repository in the [Vercel dashboard](https://vercel.com/new) or run `vercel` from this directory.
-2. Set **`PUBLIC_URL`** to your deployment URL (e.g. `https://my-project.vercel.app`), then redeploy.
+2. Set **`PUBLIC_URL`** to your deployment URL (e.g. `https://myx-spend.vercel.app`), then redeploy.
 3. Call `POST https://<your-deployment>/v1/createPayment` with the headers above.
 
 **Note:** In-memory checkout data does not survive cold starts or multiple instances. For production, persist sessions (database or cache) and optionally invoke `callback_url` when a payment completes.
@@ -124,10 +124,13 @@ Import **`MYXSpend-Backend.postman_collection.json`**. Set collection variables:
 ```
 ├── README.md
 ├── MYXSpend-Backend.postman_collection.json
+├── api/
+│   └── index.js          # Vercel serverless entry (imports Express app)
 ├── package.json
 ├── run-local.mjs          # Local HTTP server (npm start)
+├── vercel.json            # Rewrites → /api
 └── src/
-    └── app.js             # Express app (Vercel + imported by run-local.mjs)
+    └── express-app.js     # Express routes & middleware
 ```
 
 ## License

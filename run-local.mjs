@@ -1,5 +1,5 @@
 import http from "http";
-import app from "./src/app.js";
+import app from "./src/express-app.js";
 
 const START_PORT = Number(process.env.PORT) || 3000;
 const MAX_PORT_TRIES = 50;
