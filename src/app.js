@@ -446,6 +446,29 @@ function missingRequiredFields(body) {
   return missing;
 }
 
+app.get("/", (_req, res) => {
+  res.type("html").send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MYXSpend Backend</title>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, sans-serif; margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0a0a0f; color: #e8ebf4; }
+    main { text-align: center; padding: 24px; }
+    h1 { font-size: 1.5rem; font-weight: 600; margin: 0 0 8px; color: #22d3a3; }
+    p { margin: 0; color: #8b95b3; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>All OK</h1>
+    <p>MYXSpend Backend is running.</p>
+  </main>
+</body>
+</html>`);
+});
+
 app.use("/v1", requireApiKey);
 
 app.post("/v1/createPayment", (req, res) => {
