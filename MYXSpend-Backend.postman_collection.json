@@ -1,0 +1,236 @@
+{
+  "info": {
+    "name": "MYXSpend Backend",
+    "description": "MYXSpend payment backend tests.\n\n- `baseUrl`: local `http://localhost:3000` (or your port), or production `https://<project>.vercel.app`.\n- On Vercel, set env `PUBLIC_URL` to that same HTTPS origin so `payment_link` in API responses is correct.\n- `X-API-KEY: UMERSHERAZ` on `/v1/*` (variable `apiKey`). `GET /checkout/...` has no API key.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "apiKey",
+      "value": "UMERSHERAZ"
+    }
+  ],
+  "item": [
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "createPayment — full payload (success)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 120,\n  \"currency\": \"USD\",\n  \"client_first_name\": \"John\",\n  \"client_last_name\": \"Doe\",\n  \"client_phone_number\": null,\n  \"client_email\": \"john.doe@gmail.com\",\n  \"service\": \"CRYPTO\",\n  \"callback_url\": \"https://my.app/myxspend/callback\",\n  \"success_url\": \"https://my.app/myxspend/success\",\n  \"error_url\": \"https://my.app/myxspend/error\",\n  \"metadata\": \"my_data\",\n  \"expire_date\": \"2026-11-08T13:08\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/v1/createPayment",
+            "description": "Expect 200 with `success: true`, `payment_link`, and `txn_id`."
+          }
+        },
+        {
+          "name": "createPayment — required fields only (success)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 99,\n  \"currency\": \"EUR\",\n  \"client_first_name\": \"Jane\",\n  \"client_last_name\": \"Smith\",\n  \"client_email\": \"jane.smith@example.com\",\n  \"service\": \"CRYPTO\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/v1/createPayment",
+            "description": "Optional URLs/metadata/expire_date omitted; should still succeed."
+          }
+        },
+        {
+          "name": "createPayment — with phone (success)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 2500,\n  \"currency\": \"USD\",\n  \"client_first_name\": \"Alex\",\n  \"client_last_name\": \"Rivera\",\n  \"client_phone_number\": \"+1-415-555-0199\",\n  \"client_email\": \"alex.rivera@example.com\",\n  \"service\": \"CRYPTO\",\n  \"callback_url\": \"https://webhook.site/your-unique-id\",\n  \"metadata\": \"order_42\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/v1/createPayment",
+            "description": "Sample with phone and webhook-style callback."
+          }
+        },
+        {
+          "name": "createPayment — missing currency (error)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 120,\n  \"client_first_name\": \"John\",\n  \"client_last_name\": \"Doe\",\n  \"client_email\": \"john.doe@gmail.com\",\n  \"service\": \"CRYPTO\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/v1/createPayment",
+            "description": "Expect 400 with `success: false` and `response: \"Missing parameters\"`."
+          }
+        },
+        {
+          "name": "createPayment — invalid amount (error)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 10.5,\n  \"currency\": \"USD\",\n  \"client_first_name\": \"John\",\n  \"client_last_name\": \"Doe\",\n  \"client_email\": \"john.doe@gmail.com\",\n  \"service\": \"CRYPTO\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/v1/createPayment",
+            "description": "Amount must be integer; expect 400 Missing parameters."
+          }
+        },
+        {
+          "name": "createPayment — bad expire_date format (error)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-KEY",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 50,\n  \"currency\": \"USD\",\n  \"client_first_name\": \"John\",\n  \"client_last_name\": \"Doe\",\n  \"client_email\": \"john.doe@gmail.com\",\n  \"service\": \"CRYPTO\",\n  \"expire_date\": \"2026-11-08 13:08\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/v1/createPayment",
+            "description": "Server expects `YYYY-MM-DDTHH:MM`; wrong separator should fail validation."
+          }
+        },
+        {
+          "name": "createPayment — missing X-API-KEY (401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 10,\n  \"currency\": \"USD\",\n  \"client_first_name\": \"A\",\n  \"client_last_name\": \"B\",\n  \"client_email\": \"a@b.com\",\n  \"service\": \"CRYPTO\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/v1/createPayment",
+            "description": "Expect 401 when `X-API-KEY` is omitted."
+          }
+        },
+        {
+          "name": "createPayment — wrong X-API-KEY (401)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-KEY",
+                "value": "wrong_key_not_matching_server"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 10,\n  \"currency\": \"USD\",\n  \"client_first_name\": \"A\",\n  \"client_last_name\": \"B\",\n  \"client_email\": \"a@b.com\",\n  \"service\": \"CRYPTO\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/v1/createPayment",
+            "description": "Expect 401 when the key is not `UMERSHERAZ`."
+          }
+        }
+      ]
+    }
+  ]
+}
