@@ -82,6 +82,102 @@ function formatMoney(amount, currency) {
   }
 }
 
+function buildRedirectUrl(baseUrl, txnId, extra) {
+  if (!baseUrl || typeof baseUrl !== "string") return null;
+  try {
+    const u = new URL(baseUrl);
+    u.searchParams.set("txn_id", txnId);
+    for (const [k, v] of Object.entries(extra ?? {})) {
+      u.searchParams.set(k, String(v));
+    }
+    return u.toString();
+  } catch {
+    return baseUrl;
+  }
+}
+
+const WEBHOOK_STATUSES = new Set([
+  "COMPLETED",
+  "FAILED",
+  "PARTIAL",
+  "CANCELED",
+  "EXPIRED",
+]);
+
+function defaultFailReason(status) {
+  switch (status) {
+    case "FAILED":
+      return "General rejection";
+    case "CANCELED":
+      return "Canceled before completion";
+    case "EXPIRED":
+      return "Payment window expired before completion";
+    case "PARTIAL":
+      return "Received amount is lower than the requested amount";
+    default:
+      return "";
+  }
+}
+
+function buildPayinWebhookPayload(session, txnId, status, opts = {}) {
+  const requested = session.amount;
+  let paid = 0;
+  if (status === "COMPLETED") {
+    paid = requested;
+  } else if (status === "PARTIAL") {
+    paid = Math.floor(Number(opts.paid_amount));
+    if (!Number.isFinite(paid)) paid = 0;
+  }
+
+  const payload = {
+    type: "payin",
+    status,
+    txn_id: txnId,
+    requested_amount: requested,
+    paid_amount: paid,
+    service: String(session.service),
+    currency: String(session.currency).toUpperCase().slice(0, 3),
+    custom_value:
+      session.metadata != null && session.metadata !== ""
+        ? String(session.metadata)
+        : "",
+  };
+
+  if (status !== "COMPLETED") {
+    const fr =
+      typeof opts.fail_reason === "string" && opts.fail_reason.trim()
+        ? opts.fail_reason.trim()
+        : defaultFailReason(status);
+    if (fr) payload.fail_reason = fr;
+  }
+  return payload;
+}
+
+async function postJsonToCallback(callbackUrl, payload) {
+  if (!callbackUrl || typeof callbackUrl !== "string") return;
+  try {
+    const res = await fetch(callbackUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) {
+      console.error("Webhook POST non-OK", callbackUrl, res.status);
+    }
+  } catch (e) {
+    console.error("Webhook POST failed", callbackUrl, e?.message ?? e);
+  }
+}
+
+function redirectForOutcome(session, txnId, status) {
+  const q = { outcome: status.toLowerCase() };
+  if (status === "COMPLETED" || status === "PARTIAL") {
+    return buildRedirectUrl(session.success_url, txnId, q);
+  }
+  return buildRedirectUrl(session.error_url, txnId, q);
+}
+
 function renderCheckoutPage(session, txnId) {
   const amount = session.amount;
   const currency = session.currency;
@@ -108,6 +204,8 @@ function renderCheckoutPage(session, txnId) {
   const successJson = JSON.stringify(successUrl ?? null);
   const errorJson = JSON.stringify(errorUrl ?? null);
   const txnJson = JSON.stringify(txnId);
+  const defaultPartial =
+    amount > 1 ? Math.max(1, Math.floor(amount / 2)) : 0;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -269,6 +367,74 @@ function renderCheckoutPage(session, txnId) {
       color: var(--text);
       border-color: rgba(120, 140, 200, 0.35);
     }
+    .btn-amber {
+      color: #fcd34d;
+      background: rgba(251, 191, 36, 0.1);
+      border: 1px solid rgba(251, 191, 36, 0.35);
+    }
+    .btn-amber:hover {
+      background: rgba(251, 191, 36, 0.18);
+    }
+    .btn-danger {
+      color: #fecaca;
+      background: rgba(248, 113, 113, 0.12);
+      border: 1px solid rgba(248, 113, 113, 0.4);
+    }
+    .btn-danger:hover {
+      background: rgba(248, 113, 113, 0.2);
+    }
+    .btn-muted {
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--stroke);
+      font-size: 13px;
+    }
+    .outcomes {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 22px;
+    }
+    .outcomes-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+    .outcome-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .outcome-grid button {
+      flex: 1 1 42%;
+      min-width: 140px;
+      padding: 12px 14px;
+      font-size: 13px;
+    }
+    .partial-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid var(--stroke);
+      background: rgba(0, 0, 0, 0.2);
+    }
+    .partial-row label {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .partial-row input {
+      width: 88px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--stroke);
+      background: var(--bg1);
+      color: var(--text);
+      font: inherit;
+    }
     .foot {
       margin-top: 22px;
       font-size: 12px;
@@ -348,52 +514,127 @@ function renderCheckoutPage(session, txnId) {
           <dd class="txn">${escapeHtml(txnId)}</dd>
         </div>
       </dl>
-      <div class="row-actions">
-        <button type="button" class="btn-primary" id="payBtn" ${expired ? "disabled" : ""}>
-          Pay ${escapeHtml(amountLabel)}
-        </button>
-        <button type="button" class="btn-ghost" id="cancelBtn">Cancel</button>
+      <div class="outcomes" id="outcomes">
+        <div class="outcomes-label">Final outcome (sends webhook to callback_url)</div>
+        <button type="button" class="btn-primary" id="btnCompleted">Completed</button>
+        <div class="partial-row">
+          <label for="partialPaid">Partial — paid amount (${escapeHtml(String(currency).toUpperCase().slice(0, 3))})</label>
+          <input type="number" id="partialPaid" min="1" max="${amount > 1 ? amount - 1 : 1}" step="1" value="${defaultPartial > 0 ? defaultPartial : ""}" ${amount <= 1 ? "disabled" : ""} />
+          <button type="button" class="btn-amber" id="btnPartial" ${amount <= 1 ? "disabled" : ""}>Partial</button>
+        </div>
+        <div class="outcome-grid">
+          <button type="button" class="btn-danger" id="btnFailed">Failed</button>
+          <button type="button" class="btn-ghost" id="btnCanceled">Canceled</button>
+          <button type="button" class="btn-amber" id="btnExpired">Expired</button>
+        </div>
       </div>
     </div>
-    <p class="foot">Demo checkout · no funds are moved. Buttons redirect when URLs were provided at creation.</p>
+    <p class="foot">Demo checkout · each outcome <code>POST</code>s JSON to your <code>callback_url</code> (if set), then redirects when URLs exist.</p>
   </div>
   <script>
     (function () {
       var txnId = ${txnJson};
-      var successUrl = ${successJson};
-      var errorUrl = ${errorJson};
-      var expired = ${expired ? "true" : "false"};
+      var requestedAmount = ${amount};
 
-      function withQuery(url, extra) {
-        try {
-          var u = new URL(url, window.location.origin);
-          u.searchParams.set("txn_id", txnId);
-          if (extra) Object.keys(extra).forEach(function (k) {
-            u.searchParams.set(k, extra[k]);
-          });
-          return u.toString();
-        } catch (e) {
-          return url;
-        }
+      function setAllBusy(busy) {
+        document.querySelectorAll("#outcomes button").forEach(function (b) {
+          b.disabled = !!busy;
+          b.style.opacity = busy ? "0.55" : "";
+        });
       }
 
-      document.getElementById("payBtn").addEventListener("click", function () {
-        if (expired) return;
-        if (successUrl) {
-          window.location.href = withQuery(successUrl, { status: "paid" });
+      async function postOutcome(status, extra) {
+        var body = Object.assign({ status: status }, extra || {});
+        var r = await fetch("/checkout/" + encodeURIComponent(txnId) + "/outcome", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        var data = await r.json().catch(function () { return {}; });
+        return { ok: r.ok, data: data };
+      }
+
+      function finish(ok, data) {
+        if (!ok) {
+          alert((data && data.response) || "Request failed");
+          setAllBusy(false);
           return;
         }
-        var card = document.getElementById("card");
-        card.querySelector(".row-actions").innerHTML =
-          '<p style="margin:0;text-align:center;color:var(--accent);font-weight:600;">Payment recorded (demo). No redirect URL was configured.</p>';
+        var redir = data.response && data.response.redirectUrl;
+        if (redir) {
+          window.location.href = redir;
+          return;
+        }
+        var el = document.getElementById("outcomes");
+        el.innerHTML =
+          '<p style="margin:0;text-align:center;color:var(--accent);font-weight:600;">Webhook sent. No redirect URL for this outcome.</p>';
+      }
+
+      document.getElementById("btnCompleted").addEventListener("click", async function () {
+        setAllBusy(true);
+        try {
+          var r = await postOutcome("COMPLETED");
+          finish(r.ok, r.data);
+        } catch (e) {
+          alert("Network error");
+          setAllBusy(false);
+        }
       });
 
-      document.getElementById("cancelBtn").addEventListener("click", function () {
-        if (errorUrl) {
-          window.location.href = withQuery(errorUrl, { status: "cancelled" });
+      document.getElementById("btnPartial").addEventListener("click", async function () {
+        var inp = document.getElementById("partialPaid");
+        var paid = parseInt(inp.value, 10);
+        if (!Number.isFinite(paid) || paid <= 0 || paid >= requestedAmount) {
+          alert("Enter paid amount: integer greater than 0 and less than " + requestedAmount);
           return;
         }
-        history.back();
+        setAllBusy(true);
+        try {
+          var r = await postOutcome("PARTIAL", { paid_amount: paid });
+          finish(r.ok, r.data);
+        } catch (e) {
+          alert("Network error");
+          setAllBusy(false);
+        }
+      });
+
+      document.getElementById("btnFailed").addEventListener("click", async function () {
+        var fr = window.prompt("Fail reason (optional)", "General rejection");
+        if (fr === null) return;
+        setAllBusy(true);
+        try {
+          var r = await postOutcome("FAILED", { fail_reason: fr || "General rejection" });
+          finish(r.ok, r.data);
+        } catch (e) {
+          alert("Network error");
+          setAllBusy(false);
+        }
+      });
+
+      document.getElementById("btnCanceled").addEventListener("click", async function () {
+        setAllBusy(true);
+        try {
+          var r = await postOutcome("CANCELED", {
+            fail_reason: "Canceled before completion",
+          });
+          finish(r.ok, r.data);
+        } catch (e) {
+          alert("Network error");
+          setAllBusy(false);
+        }
+      });
+
+      document.getElementById("btnExpired").addEventListener("click", async function () {
+        setAllBusy(true);
+        try {
+          var r = await postOutcome("EXPIRED", {
+            fail_reason: "Payment window expired before completion",
+          });
+          finish(r.ok, r.data);
+        } catch (e) {
+          alert("Network error");
+          setAllBusy(false);
+        }
       });
     })();
   </script>
@@ -555,6 +796,80 @@ app.get("/checkout/:txnId", (req, res) => {
     return;
   }
   res.type("html").send(renderCheckoutPage(session, req.params.txnId));
+});
+
+app.post("/checkout/:txnId/outcome", async (req, res) => {
+  const { txnId } = req.params;
+  const body = req.body ?? {};
+  const status = body.status;
+
+  if (!WEBHOOK_STATUSES.has(status)) {
+    return res.status(400).json({
+      success: false,
+      response: "Invalid status",
+    });
+  }
+
+  const session = checkoutSessions.get(txnId);
+  if (!session) {
+    return res.status(404).json({ success: false, response: "Not found" });
+  }
+
+  if (session.terminal_status) {
+    if (session.terminal_status === status) {
+      return res.status(200).json({
+        success: true,
+        response: {
+          redirectUrl: redirectForOutcome(session, txnId, status),
+          duplicate: true,
+        },
+      });
+    }
+    return res.status(409).json({
+      success: false,
+      response: `Transaction already finalized as ${session.terminal_status}`,
+    });
+  }
+
+  const expireAt = parseExpireDate(session.expire_date);
+  const timeExpired = expireAt != null && Date.now() > expireAt.getTime();
+  if (timeExpired && (status === "COMPLETED" || status === "PARTIAL")) {
+    return res.status(400).json({
+      success: false,
+      response:
+        "This payment link has expired — use Expired, Failed, or Canceled instead",
+    });
+  }
+
+  if (status === "PARTIAL") {
+    const paid = body.paid_amount;
+    if (
+      !Number.isInteger(paid) ||
+      paid <= 0 ||
+      paid >= session.amount ||
+      session.amount <= 1
+    ) {
+      return res.status(400).json({
+        success: false,
+        response:
+          "paid_amount must be an integer with 0 < paid_amount < requested amount",
+      });
+    }
+  }
+
+  session.terminal_status = status;
+  const payload = buildPayinWebhookPayload(session, txnId, status, {
+    paid_amount: body.paid_amount,
+    fail_reason: body.fail_reason,
+  });
+  await postJsonToCallback(session.callback_url, payload);
+
+  return res.status(200).json({
+    success: true,
+    response: {
+      redirectUrl: redirectForOutcome(session, txnId, status),
+    },
+  });
 });
 
 export default app;
