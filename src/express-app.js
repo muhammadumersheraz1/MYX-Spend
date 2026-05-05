@@ -5,6 +5,11 @@ app.set("trust proxy", 1);
 app.use(express.json());
 
 const VALID_API_KEY = "UMERSHERAZ";
+
+/** Sent on every webhook POST as `x-mxs-webhook-key` (set `MXS_WEBHOOK_KEY` in production). */
+const MXS_WEBHOOK_KEY =
+  process.env.MXS_WEBHOOK_KEY?.trim() || "mxs_webhook_dev_secret_change_me";
+
 /** @type {Map<string, Record<string, unknown>>} */
 const checkoutSessions = new Map();
 
@@ -158,7 +163,10 @@ async function postJsonToCallback(callbackUrl, payload) {
   try {
     const res = await fetch(callbackUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-mxs-webhook-key": MXS_WEBHOOK_KEY,
+      },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(15_000),
     });

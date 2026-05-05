@@ -27,8 +27,10 @@ npm run dev
 |---------------|----------|-------------|
 | `PORT`        | No       | Local HTTP port (default `3000`). |
 | `PUBLIC_URL`  | No*      | Public site origin with **no** trailing slash (e.g. `https://your-app.vercel.app`). Used for `payment_link` when the request host is not the public URL (typical behind Vercel). |
+| `MXS_WEBHOOK_KEY` | No†  | Secret value sent on outbound webhooks as header **`x-mxs-webhook-key`**. Your receiver should reject requests without a matching value. If unset, a dev default is used (change it in production). |
 
-\* Strongly recommended in production / on Vercel so returned `payment_link` values use your real HTTPS domain.
+\* Strongly recommended in production / on Vercel so returned `payment_link` values use your real HTTPS domain.  
+† Set on Vercel and locally so `callback_url` endpoints can authenticate webhooks.
 
 Do not commit secrets; use `.env` locally (see `.gitignore`).
 
@@ -102,12 +104,19 @@ or, for auth failures:
 
 Returns the payment HTML page for a transaction created via `createPayment`. Sessions are stored **in memory** only.
 
+### Webhooks (`callback_url`)
+
+When the customer picks a final outcome on the checkout page, the server **POST**s JSON to **`callback_url`** (if it was set on `createPayment`). Every webhook request includes:
+
+- **`Content-Type: application/json`**
+- **`x-mxs-webhook-key: <secret>`** — same value as the **`MXS_WEBHOOK_KEY`** environment variable (or the built-in dev default if unset). Verify this header on your endpoint before trusting the body.
+
 ## Deploy on Vercel
 
 Production uses **`api/index.js`**, which default-exports the Express app from **`src/express-app.js`**. **`vercel.json`** rewrites all paths to `/api` so `https://<project>.vercel.app/`, `/v1/...`, and `/checkout/...` hit the same function (avoids the platform **404 NOT_FOUND** when only `src/app.js` is present and routing is unclear).
 
 1. Connect the repository in the [Vercel dashboard](https://vercel.com/new) or run `vercel` from this directory.
-2. Set **`PUBLIC_URL`** to your deployment URL (e.g. `https://myx-spend.vercel.app`), then redeploy.
+2. Set **`PUBLIC_URL`** and **`MXS_WEBHOOK_KEY`** (your long random secret) in the Vercel project environment, then redeploy.
 3. Call `POST https://<your-deployment>/v1/createPayment` with the headers above.
 
 **Note:** In-memory checkout data does not survive cold starts or multiple instances. For production, persist sessions (database or cache) and optionally invoke `callback_url` when a payment completes.
