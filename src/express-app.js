@@ -53,6 +53,14 @@ function isValidExpireDate(v) {
   return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v);
 }
 
+function isValidAmount(v) {
+  return typeof v === "number" && Number.isFinite(v) && v > 0;
+}
+
+function roundMoneyAmount(v) {
+  return Math.round((Number(v) + Number.EPSILON) * 100) / 100;
+}
+
 function generateTxnId() {
   const hex = Array.from({ length: 12 }, () =>
     Math.floor(Math.random() * 16).toString(16).toUpperCase()
@@ -77,11 +85,13 @@ function parseExpireDate(expireDate) {
 
 function formatMoney(amount, currency) {
   try {
+    const numericAmount = Number(amount);
     return new Intl.NumberFormat(undefined, {
       style: "currency",
       currency: String(currency).toUpperCase().slice(0, 3),
-      maximumFractionDigits: 0,
-    }).format(amount);
+      minimumFractionDigits: Number.isInteger(numericAmount) ? 0 : 2,
+      maximumFractionDigits: 2,
+    }).format(numericAmount);
   } catch {
     return `${amount} ${String(currency).toUpperCase()}`;
   }
@@ -130,7 +140,7 @@ function buildPayinWebhookPayload(session, txnId, status, opts = {}) {
   if (status === "COMPLETED") {
     paid = requested;
   } else if (status === "PARTIAL") {
-    paid = Math.floor(Number(opts.paid_amount));
+    paid = Number(opts.paid_amount);
     if (!Number.isFinite(paid)) paid = 0;
   }
 
@@ -212,8 +222,14 @@ function renderCheckoutPage(session, txnId) {
   const successJson = JSON.stringify(successUrl ?? null);
   const errorJson = JSON.stringify(errorUrl ?? null);
   const txnJson = JSON.stringify(txnId);
-  const defaultPartial =
-    amount > 1 ? Math.max(1, Math.floor(amount / 2)) : 0;
+  const partialStep = 0.01;
+  const canPartial = amount > partialStep;
+  const maxPartial = canPartial
+    ? roundMoneyAmount(amount - partialStep)
+    : partialStep;
+  const defaultPartial = canPartial
+    ? Math.min(maxPartial, Math.max(partialStep, roundMoneyAmount(amount / 2)))
+    : 0;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -527,8 +543,8 @@ function renderCheckoutPage(session, txnId) {
         <button type="button" class="btn-primary" id="btnCompleted">Completed</button>
         <div class="partial-row">
           <label for="partialPaid">Partial — paid amount (${escapeHtml(String(currency).toUpperCase().slice(0, 3))})</label>
-          <input type="number" id="partialPaid" min="1" max="${amount > 1 ? amount - 1 : 1}" step="1" value="${defaultPartial > 0 ? defaultPartial : ""}" ${amount <= 1 ? "disabled" : ""} />
-          <button type="button" class="btn-amber" id="btnPartial" ${amount <= 1 ? "disabled" : ""}>Partial</button>
+          <input type="number" id="partialPaid" min="${partialStep}" max="${maxPartial}" step="${partialStep}" value="${defaultPartial > 0 ? defaultPartial : ""}" ${!canPartial ? "disabled" : ""} />
+          <button type="button" class="btn-amber" id="btnPartial" ${!canPartial ? "disabled" : ""}>Partial</button>
         </div>
         <div class="outcome-grid">
           <button type="button" class="btn-danger" id="btnFailed">Failed</button>
@@ -591,9 +607,9 @@ function renderCheckoutPage(session, txnId) {
 
       document.getElementById("btnPartial").addEventListener("click", async function () {
         var inp = document.getElementById("partialPaid");
-        var paid = parseInt(inp.value, 10);
+        var paid = Number(inp.value);
         if (!Number.isFinite(paid) || paid <= 0 || paid >= requestedAmount) {
-          alert("Enter paid amount: integer greater than 0 and less than " + requestedAmount);
+          alert("Enter paid amount greater than 0 and less than " + requestedAmount);
           return;
         }
         setAllBusy(true);
@@ -686,7 +702,7 @@ function renderCheckoutNotFound() {
 function missingRequiredFields(body) {
   const missing = [];
   if (body.amount === undefined || body.amount === null) missing.push("amount");
-  else if (!Number.isInteger(body.amount)) missing.push("amount");
+  else if (!isValidAmount(body.amount)) missing.push("amount");
   if (!isNonEmptyString(body.currency)) missing.push("currency");
   if (!isNonEmptyString(body.client_first_name)) missing.push("client_first_name");
   if (!isNonEmptyString(body.client_last_name)) missing.push("client_last_name");
@@ -852,15 +868,15 @@ app.post("/checkout/:txnId/outcome", async (req, res) => {
   if (status === "PARTIAL") {
     const paid = body.paid_amount;
     if (
-      !Number.isInteger(paid) ||
+      !isValidAmount(paid) ||
       paid <= 0 ||
       paid >= session.amount ||
-      session.amount <= 1
+      session.amount <= 0.01
     ) {
       return res.status(400).json({
         success: false,
         response:
-          "paid_amount must be an integer with 0 < paid_amount < requested amount",
+          "paid_amount must be a number with 0 < paid_amount < requested amount",
       });
     }
   }

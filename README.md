@@ -57,7 +57,7 @@ The checkout page **`GET /checkout/:txnId`** is opened in the browser and does *
 
 | Field                 | Type    | Required | Notes |
 |-----------------------|---------|----------|--------|
-| `amount`              | integer | Yes      | Whole number only. |
+| `amount`              | number  | Yes      | Positive amount; decimals are allowed. |
 | `currency`            | string  | Yes      | e.g. `USD`, `EUR`. |
 | `client_first_name`   | string  | Yes      | |
 | `client_last_name`    | string  | Yes      | |
