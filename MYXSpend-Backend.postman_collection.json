@@ -61,7 +61,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"amount\": 99.99,\n  \"currency\": \"EUR\",\n  \"client_first_name\": \"Jane\",\n  \"client_last_name\": \"Smith\",\n  \"client_email\": \"jane.smith@example.com\",\n  \"service\": \"CRYPTO\"\n}",
+              "raw": "{\n  \"amount\": 99.99,\n  \"currency\": \"USD\",\n  \"client_first_name\": \"Jane\",\n  \"client_last_name\": \"Smith\",\n  \"client_email\": \"jane.smith@example.com\",\n  \"service\": \"CRYPTO\"\n}",
               "options": {
                 "raw": {
                   "language": "json"

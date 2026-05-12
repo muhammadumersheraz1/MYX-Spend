@@ -57,6 +57,10 @@ function isValidAmount(v) {
   return typeof v === "number" && Number.isFinite(v) && v > 0;
 }
 
+function isSupportedCurrency(v) {
+  return typeof v === "string" && v.trim().toUpperCase() === "USD";
+}
+
 function roundMoneyAmount(v) {
   return Math.round((Number(v) + Number.EPSILON) * 100) / 100;
 }
@@ -747,6 +751,13 @@ app.post("/v1/createPayment", (req, res) => {
     });
   }
 
+  if (!isSupportedCurrency(body.currency)) {
+    return res.status(400).json({
+      success: false,
+      response: "currency not supported",
+    });
+  }
+
   if (!isOptionalStringOrNull(body.client_phone_number)) {
     return res.status(400).json({
       success: false,
@@ -789,7 +800,7 @@ app.post("/v1/createPayment", (req, res) => {
   const txnId = generateTxnId();
   checkoutSessions.set(txnId, {
     amount: body.amount,
-    currency: body.currency,
+    currency: "USD",
     client_first_name: body.client_first_name,
     client_last_name: body.client_last_name,
     client_email: body.client_email,
